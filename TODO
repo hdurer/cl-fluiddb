@@ -1,0 +1,15 @@
+#                   -*- org -*-
+
+
+* Functionality
+** [ ] Permissions
+** [ ] Policies
+** [ ] Check other APIs are all done
+** [ ] Tests for all of the above
+** [ ] Upgrade to current version of drakma
+** [ ] Get rid of SBCL specific calls
+
+* Correctness
+** [ ] Check UTF8 input gets processed correctly
+** [ ] Check UTF8 output gets processed correctly
+
