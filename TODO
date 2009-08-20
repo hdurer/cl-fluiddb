@@ -1,9 +1,10 @@
-#                   -*- org -*-
+#                                                                   -*- org -*-
 
 
 * Functionality
 ** [ ] Permissions
 ** [ ] Policies
+** [ ] Tags
 ** [ ] Check other APIs are all done
 ** [ ] Tests for all of the above
 ** [ ] Upgrade to current version of drakma
