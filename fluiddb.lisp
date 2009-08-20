@@ -1,22 +1,49 @@
 (in-package #:cl-fluiddb)
 
+(defvar *connection* nil
+  "A store for any existing connection to the server that can be re-used")
 
-(defun send-request (url  &key body-data query-data (want-json t) (method :get) (content-type "application/json"))
+(defvar *credentials* nil
+  "User credentidals to be used for a request.
+Should be either nil (anonymous access) or a list of two strings (username password)")
+
+(defvar *proxy-server* nil
+  "Information about the proxy server to use for requests.
+Should be either nil (direct access), a string (the server to use),
+or a list of two values (server port)")
+
+(defvar *proxy-credentials* nil
+  "Credentials to be used to authenticate against the proxy configured via *proxy-server*")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Helper functions
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun send-request (url &key body-data query-data (want-json t) (method :get) (content-type "application/json"))
   "Send a request to FluidDB.
 Set want-json to nil if you do not want only application/json back (e.g. to get payload of a tag).
 
 We inspect the return data and convert it to a lisp data structure if it is json"
   (let ((drakma:*drakma-default-external-format* :utf-8))
-    (multiple-value-bind (raw-response code headers url stream close status-text)
+    (multiple-value-bind (raw-response code headers url stream should-close status-text)
         (drakma:http-request (concatenate 'string "http://fluiddb.fluidinfo.com/" url)
                              :parameters query-data
                              :method method
+                             :stream *connection*
                              :content body-data
                              :content-type content-type
                              :additional-headers (if want-json
                                                      '((:accept . "application/json")))
-                             :user-agent "CL-FLUIDDB")
-      (declare (ignore url stream close))
+                             :user-agent "CL-FLUIDDB"
+                             :basic-authorization *credentials*
+                             :proxy *proxy-server*
+                             :proxy-basic-authorization *proxy-credentials*)
+      (declare (ignore url))
+      (if should-close
+          (progn
+            (close stream)
+            (setf *connection* nil))
+          (setf *connection* stream))
       (let* ((content-type (cdr (assoc :content-type headers)))
              (response (if (string-equal "application/json" content-type)
                            (json:decode-json-from-string

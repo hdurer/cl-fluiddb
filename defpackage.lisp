@@ -3,6 +3,11 @@
 (defpackage #:cl-fluiddb
   (:use #:cl)
   (:export
+
+   ;; variables
+   #:*credentials*
+   #:proxy-server*
+   #:proxy-credentials*
    
    ;; functions
    #:get-user
