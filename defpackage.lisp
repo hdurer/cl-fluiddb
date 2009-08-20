@@ -8,15 +8,18 @@
    #:*credentials*
    #:proxy-server*
    #:proxy-credentials*
+
    
-   ;; functions
+   ;; functions and macros
+   #:with-credentials
+   
    #:get-user
    
    #:get-object
    #:query-objects
    #:create-object
    #:get-object-tag-value
-   #:change-object-tag-value
+   #:set-object-tag-value
 
    #:get-namespace
    #:create-namespace

@@ -69,6 +69,25 @@ We inspect the return data and convert it to a lisp data structure if it is json
      ("exceptions" . ,(mapcar 'to-string exceptions)))))
 
 
+;; the following is a bit of a hack as my copy of the json library
+;; cannot encode a false value
+(defmethod json:encode-json((obj (eql 'json::true)) stream)
+  (json::write-json-chars "true" stream))
+(defmethod json:encode-json((obj (eql 'json::false)) stream)
+  (json::write-json-chars "false" stream))
+
+(defun to-boolean (value)
+  (if value 'json::true 'json::false))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Helpful things for users of this library
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defmacro with-credentials ((username password) &body body)
+  `(let ((*credentials* (list ,username ,password)))
+     ,@body))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Users
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -80,23 +99,25 @@ We inspect the return data and convert it to a lisp data structure if it is json
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defun get-object (id &key (show-about t))
   (send-request (concatenate 'string "objects/" id)
-                :body-data (json:encode-json-plist-to-string (list "showAbout" show-about))))
+                :body-data (json:encode-json-plist-to-string
+                            (list "showAbout" (to-boolean show-about)))))
 
 
 (defun query-objects (query)
   (send-request "objects"
                 :query-data `(("query" . ,query))))
 
-(defun create-object (about)
+(defun create-object (&optional about)
   (send-request "objects"
-                :body-data (json:encode-json-plist-to-string (list "about" about))
+                :body-data (json:encode-json-plist-to-string
+                            (when about (list "about" about)))
                 :method :post))
 
 (defun get-object-tag-value (id tag)
   (send-request (concatenate 'string "objects/" id "/" tag)
                 :want-json nil))
 
-(defun change-object-tag-value (id tag content content-type)
+(defun set-object-tag-value (id tag content content-type)
   (send-request (concatenate 'string "objects/" id "/" tag)
                 :method :put
                 :body-data content
@@ -190,9 +211,10 @@ We inspect the return data and convert it to a lisp data structure if it is json
   (send-request (concatenate 'string
                              "tags/" namespace)
                 :method :post
-                :body-data `(("name" . ,tag)
-                             ("description" . ,description)
-                             ("indexed" . ,(if indexed t nil)))))
+                :body-data (json:encode-json-alist-to-string
+                            `(("name" . ,tag)
+                              ("description" . ,description)
+                              ("indexed" . ,(to-boolean indexed))))))
 
 
 (defun get-tag (namespace tag &key (return-description t))
