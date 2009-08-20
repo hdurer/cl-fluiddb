@@ -6,9 +6,9 @@
 
    ;; variables
    #:*credentials*
-   #:proxy-server*
-   #:proxy-credentials*
-
+   #:*proxy-server*
+   #:*proxy-credentials*
+   #:*user-agent*
    
    ;; functions and macros
    #:with-credentials

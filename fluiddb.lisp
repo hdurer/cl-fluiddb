@@ -15,6 +15,21 @@ or a list of two values (server port)")
 (defvar *proxy-credentials* nil
   "Credentials to be used to authenticate against the proxy configured via *proxy-server*")
 
+(defvar *user-agent* "CL-FLUIDDB"
+  "The string to be used as your user agent when making request.
+This might allow FluidInfo to better monitor what app is using their service")
+
+
+(define-condition call-error (error)
+  ((status-code :initarg :status-code :accessor status-code)
+   (status-message :initarg :status-message :accessor status-message)
+   (error-body :initarg :error-body :accessor error-body))
+  (:report (lambda (condition stream)
+             (format stream "FluidDB server returned error code ~a - ~s (~s)"
+                     (status-code condition)
+                     (status-message condition)
+                     (error-body condition)))))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Helper functions
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -26,18 +41,35 @@ Set want-json to nil if you do not want only application/json back (e.g. to get 
 We inspect the return data and convert it to a lisp data structure if it is json"
   (let ((drakma:*drakma-default-external-format* :utf-8))
     (multiple-value-bind (raw-response code headers url stream should-close status-text)
-        (drakma:http-request (concatenate 'string "http://fluiddb.fluidinfo.com/" url)
-                             :parameters query-data
-                             :method method
-                             :stream *connection*
-                             :content body-data
-                             :content-type content-type
-                             :additional-headers (if want-json
-                                                     '((:accept . "application/json")))
-                             :user-agent "CL-FLUIDDB"
-                             :basic-authorization *credentials*
-                             :proxy *proxy-server*
-                             :proxy-basic-authorization *proxy-credentials*)
+        (handler-case
+            (drakma:http-request (concatenate 'string "http://fluiddb.fluidinfo.com/" url)
+                                 :parameters query-data
+                                 :method method
+                                 :close nil :keep-alive t 
+                                 :stream *connection*
+                                 :content body-data
+                                 :content-type content-type
+                                 :additional-headers (if want-json
+                                                         '((:accept . "application/json")))
+                                 :user-agent *user-agent*
+                                 :basic-authorization *credentials*
+                                 :proxy *proxy-server*
+                                 :proxy-basic-authorization *proxy-credentials*)
+          (error () ;; assume a stale file handle and just re-try with a fresh one
+            (setf *connection* nil)
+            (drakma:http-request (concatenate 'string "http://fluiddb.fluidinfo.com/" url)
+                                 :parameters query-data
+                                 :method method
+                                 :close nil :keep-alive t 
+                                 :stream nil
+                                 :content body-data
+                                 :content-type content-type
+                                 :additional-headers (if want-json
+                                                         '((:accept . "application/json")))
+                                 :user-agent *user-agent*
+                                 :basic-authorization *credentials*
+                                 :proxy *proxy-server*
+                                 :proxy-basic-authorization *proxy-credentials*)))
       (declare (ignore url))
       (if should-close
           (progn
@@ -49,12 +81,19 @@ We inspect the return data and convert it to a lisp data structure if it is json
                            (json:decode-json-from-string
                             (sb-ext:octets-to-string (coerce raw-response '(vector (unsigned-byte 8)))))
                            raw-response)))
-        (values response
-                code
-                status-text
-                raw-response
-                content-type
-                headers)))))
+        (if (<= 200 code 299)
+            ;; a good answer
+            (values response
+                    code
+                    status-text
+                    raw-response
+                    content-type
+                    headers)
+            ;; some error in the call
+            (error 'call-error
+                    :status-code code
+                    :status-message status-text
+                    :error-body response))))))
 
 (defun to-string (something)
   "Do sensible conversion to a string"

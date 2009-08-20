@@ -5,7 +5,7 @@
   - [x] Permissions
   - [x] Policies
   - [x] Tags
-  - [ ] Sort out proper error handling
+  - [X] Sort out proper error handling
   - [ ] Check other APIs are all done
   - [ ] Upgrade to current version of drakma
   - [ ] Get rid of SBCL specific calls
