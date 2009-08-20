@@ -15,11 +15,27 @@
    #:get-object
    #:query-objects
    #:create-object
-   #:get-object-tag
-   #:change-object-tag
+   #:get-object-tag-value
+   #:change-object-tag-value
 
    #:get-namespace
    #:create-namespace
    #:change-namespace
    #:delete-namespace
+
+   #:get-namespace-permissions
+   #:set-namespace-permissions
+   #:get-tag-permissions
+   #:set-tag-permissions
+   #:get-tag-value-permissions
+   #:set-tag-value-permissions
+   
+   #:get-policy
+   #:set-policy
+
+   #:create-tag
+   #:get-tag
+   #:change-tag
+   #:delete-tag
+   
    ))

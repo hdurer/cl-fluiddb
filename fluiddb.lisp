@@ -56,6 +56,19 @@ We inspect the return data and convert it to a lisp data structure if it is json
                 content-type
                 headers)))))
 
+(defun to-string (something)
+  "Do sensible conversion to a string"
+  (typecase something
+    (symbol (string-downcase (symbol-name something)))
+    (string something)
+    (t (format nil "~a" something))))
+
+(defun make-permission-object (policy exceptions)
+  (json:encode-json-alist-to-string
+   `(("policy" . ,(to-string policy))
+     ("exceptions" . ,(mapcar 'to-string exceptions)))))
+
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Users
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -79,11 +92,11 @@ We inspect the return data and convert it to a lisp data structure if it is json
                 :body-data (json:encode-json-plist-to-string (list "about" about))
                 :method :post))
 
-(defun get-object-tag (id tag)
+(defun get-object-tag-value (id tag)
   (send-request (concatenate 'string "objects/" id "/" tag)
                 :want-json nil))
 
-(defun change-object-tag (id tag content content-type)
+(defun change-object-tag-value (id tag content content-type)
   (send-request (concatenate 'string "objects/" id "/" tag)
                 :method :put
                 :body-data content
@@ -115,3 +128,87 @@ We inspect the return data and convert it to a lisp data structure if it is json
                 :method :delete))
 
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Permissions
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun get-namespace-permissions (namespace action)
+  (send-request (concatenate 'string "permissions/namespaces/" namespace)
+                :query-data `(("action" . ,action))))
+
+(defun set-namespace-permissions (namespace action policy exceptions)
+  (send-request (concatenate 'string "permissions/namespaces/" namespace)
+                :method :put
+                :query-data `(("action" . ,action))
+                :body-data (make-permission-object policy exceptions)))
+
+(defun get-tag-permissions (tag action)
+  (send-request (concatenate 'string "permissions/tags/" tag)
+                :query-data `(("action" . ,action))))
+
+(defun set-tag-permissions (tag action policy exceptions)
+  (send-request (concatenate 'string "permissions/tags/" tag)
+                :method :put
+                :query-data `(("action" . ,action))
+                :body-data (make-permission-object policy exceptions)))
+
+(defun get-tag-value-permissions (tag action)
+  (send-request (concatenate 'string "permissions/tag-values/" tag)
+                :query-data `(("action" . ,action))))
+
+(defun set-tag-value-permissions (tag action policy exceptions)
+  (send-request (concatenate 'string "permissions/tag-values/" tag)
+                :method :put
+                :query-data `(("action" . ,action))
+                :body-data (make-permission-object policy exceptions)))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Policies
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun get-policy (user-name category action)
+  (send-request (concatenate 'string
+                             "policies/"
+                             user-name "/"
+                             (to-string category) "/"
+                             (to-string action))))
+
+(defun set-policy (user-name category action policy exceptions)
+  (send-request (concatenate 'string
+                             "policies/"
+                             user-name "/"
+                             (to-string category) "/"
+                             (to-string action))
+                :body-data (make-permission-object policy exceptions)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Tags
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun create-tag (namespace tag description indexed)
+  (send-request (concatenate 'string
+                             "tags/" namespace)
+                :method :post
+                :body-data `(("name" . ,tag)
+                             ("description" . ,description)
+                             ("indexed" . ,(if indexed t nil)))))
+
+
+(defun get-tag (namespace tag &key (return-description t))
+  (send-request (concatenate 'string
+                             "tags/" namespace "/"
+                             tag)
+                :query-data `(("returnDescription" . ,(if return-description t nil)))))
+(defun change-tag (namespace tag description)
+  (send-request (concatenate 'string
+                             "tags/" namespace "/"
+                             tag)
+                :method :put
+                :body-data `(("description" . ,description))))
+
+(defun delete-tag (namespace tag)
+  (send-request (concatenate 'string
+                             "tags/" namespace "/"
+                             tag)
+                :method :delete))
