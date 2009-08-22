@@ -1,5 +1,11 @@
 (in-package #:cl-fluiddb)
 
+(defvar *server-url* "fluiddb.fluidinfo.com/"
+  "Base URL (without the http:// or https:// protocol bit) for the server to call")
+
+(defvar *use-https* t
+  "Flag whether to use HTTPS or just HTTP")
+
 (defvar *connection* nil
   "A store for any existing connection to the server that can be re-used")
 
@@ -39,33 +45,42 @@ This might allow FluidInfo to better monitor what app is using their service")
 Set want-json to nil if you do not want only application/json back (e.g. to get payload of a tag).
 
 We inspect the return data and convert it to a lisp data structure if it is json"
-  (let ((drakma:*drakma-default-external-format* :utf-8))
+  (let ((drakma:*drakma-default-external-format* :utf-8)
+        (url (concatenate 'string
+                          (if *use-https* "https://" "http://")
+                          *server-url*
+                          url))
+        (body-data (if (and body-data (stringp body-data))
+                       ;; convert to UTF-8 as my Drakma version get lenght wrong otherwise
+                       (flexi-streams:string-to-octets body-data :external-format :utf-8)
+                       body-data))
+        (additional-headers `(("accept-encoding" . "base64")
+                              ,@(if want-json
+                                    '((:accept . "application/json"))))))
     (multiple-value-bind (raw-response code headers url stream should-close status-text)
         (handler-case
-            (drakma:http-request (concatenate 'string "http://fluiddb.fluidinfo.com/" url)
+            (drakma:http-request url
                                  :parameters query-data
                                  :method method
                                  :close nil :keep-alive t 
                                  :stream *connection*
                                  :content body-data
                                  :content-type content-type
-                                 :additional-headers (if want-json
-                                                         '((:accept . "application/json")))
+                                 :additional-headers additional-headers
                                  :user-agent *user-agent*
                                  :basic-authorization *credentials*
                                  :proxy *proxy-server*
                                  :proxy-basic-authorization *proxy-credentials*)
           (error () ;; assume a stale file handle and just re-try with a fresh one
             (setf *connection* nil)
-            (drakma:http-request (concatenate 'string "http://fluiddb.fluidinfo.com/" url)
+            (drakma:http-request (concatenate 'string *server-url* url)
                                  :parameters query-data
                                  :method method
                                  :close nil :keep-alive t 
                                  :stream nil
                                  :content body-data
                                  :content-type content-type
-                                 :additional-headers (if want-json
-                                                         '((:accept . "application/json")))
+                                 :additional-headers additional-headers
                                  :user-agent *user-agent*
                                  :basic-authorization *credentials*
                                  :proxy *proxy-server*
@@ -152,15 +167,16 @@ We inspect the return data and convert it to a lisp data structure if it is json
                             (when about (list "about" about)))
                 :method :post))
 
-(defun get-object-tag-value (id tag)
+(defun get-object-tag-value (id tag &key want-json)
   (send-request (concatenate 'string "objects/" id "/" tag)
-                :want-json nil))
+                :query-data (when want-json '(("format" . "json")))
+                :want-json (to-boolean want-json)))
 
-(defun set-object-tag-value (id tag content content-type)
+(defun set-object-tag-value (id tag content &optional content-type)
   (send-request (concatenate 'string "objects/" id "/" tag)
                 :method :put
                 :body-data content
-                :content-type content-type))
+                :content-type (or content-type "application/json")))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

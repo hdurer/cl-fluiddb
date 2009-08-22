@@ -5,6 +5,7 @@
   (:export
 
    ;; variables
+   #:*use-https*
    #:*credentials*
    #:*proxy-server*
    #:*proxy-credentials*
