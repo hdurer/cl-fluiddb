@@ -1,7 +1,9 @@
 (in-package #:cl-fluiddb)
 
-(defvar *server-url* "fluiddb.fluidinfo.com/"
+(defvar *server-url* "fluiddb.fluidinfo.com"
   "Base URL (without the http:// or https:// protocol bit) for the server to call")
+
+(defvar *using-sandbox* nil)
 
 (defvar *use-https* t
   "Flag whether to use HTTPS or just HTTP")
@@ -40,23 +42,24 @@ This might allow FluidInfo to better monitor what app is using their service")
 ;; Helper functions
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defun send-request (url &key body-data query-data (want-json t) (method :get) (content-type "application/json"))
+
+
+(defun send-request (url &key body-data query-data (accept "application/json") (method :get) (content-type "application/json"))
   "Send a request to FluidDB.
-Set want-json to nil if you do not want only application/json back (e.g. to get payload of a tag).
+Set accept to the content-type you want (\"*/*\" if you don't know).
 
 We inspect the return data and convert it to a lisp data structure if it is json"
   (let ((drakma:*drakma-default-external-format* :utf-8)
         (url (concatenate 'string
                           (if *use-https* "https://" "http://")
-                          *server-url*
+                          *server-url* "/"
                           url))
         (body-data (if (and body-data (stringp body-data))
                        ;; convert to UTF-8 as my Drakma version get lenght wrong otherwise
                        (flexi-streams:string-to-octets body-data :external-format :utf-8)
                        body-data))
-        (additional-headers `(("accept-encoding" . "base64")
-                              ,@(if want-json
-                                    '((:accept . "application/json"))))))
+        (accept accept)
+        (additional-headers '(("accept-encoding" . "base64" #+nil"identity;1.0, base64; 0.5"))))
     (multiple-value-bind (raw-response code headers url stream should-close status-text)
         (handler-case
             (drakma:http-request url
@@ -66,20 +69,24 @@ We inspect the return data and convert it to a lisp data structure if it is json
                                  :stream *connection*
                                  :content body-data
                                  :content-type content-type
+                                 :accept accept
                                  :additional-headers additional-headers
                                  :user-agent *user-agent*
                                  :basic-authorization *credentials*
                                  :proxy *proxy-server*
                                  :proxy-basic-authorization *proxy-credentials*)
-          (error () ;; assume a stale file handle and just re-try with a fresh one
+          (error (ex) ;; assume a stale file handle and just re-try with a fresh one
+            (when drakma:*header-stream*
+              (format drakma:*header-stream* "~%cl-fluiddb: caught condition ~a -- retrying with fresh stream" ex))
             (setf *connection* nil)
-            (drakma:http-request (concatenate 'string *server-url* url)
+            (drakma:http-request url
                                  :parameters query-data
                                  :method method
                                  :close nil :keep-alive t 
                                  :stream nil
                                  :content body-data
                                  :content-type content-type
+                                 :accept accept
                                  :additional-headers additional-headers
                                  :user-agent *user-agent*
                                  :basic-authorization *credentials*
@@ -94,7 +101,7 @@ We inspect the return data and convert it to a lisp data structure if it is json
       (let* ((content-type (cdr (assoc :content-type headers)))
              (response (if (string-equal "application/json" content-type)
                            (json:decode-json-from-string
-                            (sb-ext:octets-to-string (coerce raw-response '(vector (unsigned-byte 8)))))
+                            (flexi-streams:octets-to-string raw-response :external-format :utf-8))
                            raw-response)))
         (if (<= 200 code 299)
             ;; a good answer
@@ -153,8 +160,10 @@ We inspect the return data and convert it to a lisp data structure if it is json
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defun get-object (id &key (show-about t))
   (send-request (concatenate 'string "objects/" id)
-                :body-data (json:encode-json-plist-to-string
-                            (list "showAbout" (to-boolean show-about)))))
+                :query-data (when *using-sandbox* `(("showAbout" . ,(if show-about "True" "False"))))
+                :body-data (unless *using-sandbox*
+                             (json:encode-json-plist-to-string
+                              '("showAbout" (to-boolean show-about))))))
 
 
 (defun query-objects (query)
@@ -167,15 +176,21 @@ We inspect the return data and convert it to a lisp data structure if it is json
                             (when about (list "about" about)))
                 :method :post))
 
-(defun get-object-tag-value (id tag &key want-json)
+(defun get-object-tag-value (id tag &key want-json accept)
   (send-request (concatenate 'string "objects/" id "/" tag)
                 :query-data (when want-json '(("format" . "json")))
-                :want-json (to-boolean want-json)))
+                :accept (if want-json "application/json" (or accept "*/*"))))
 
 (defun set-object-tag-value (id tag content &optional content-type)
   (send-request (concatenate 'string "objects/" id "/" tag)
                 :method :put
-                :body-data content
+                :query-data (unless content-type
+                              '(("format" . "json")))
+                :body-data (if content-type
+                               ;; assume pre-formatted
+                               content
+                               ;; encode into json
+                               (json:encode-json-alist-to-string content))
                 :content-type (or content-type "application/json")))
 
 
