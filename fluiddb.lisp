@@ -160,10 +160,7 @@ We inspect the return data and convert it to a lisp data structure if it is json
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defun get-object (id &key (show-about t))
   (send-request (concatenate 'string "objects/" id)
-                :query-data (when *using-sandbox* `(("showAbout" . ,(if show-about "True" "False"))))
-                :body-data (unless *using-sandbox*
-                             (json:encode-json-plist-to-string
-                              '("showAbout" (to-boolean show-about))))))
+                :query-data `(("showAbout" . ,(if show-about "True" "False")))))
 
 
 (defun query-objects (query)
