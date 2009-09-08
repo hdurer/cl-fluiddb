@@ -10,6 +10,7 @@
    #:*proxy-server*
    #:*proxy-credentials*
    #:*user-agent*
+   #:*call-timeout*
    
    ;; functions and macros
    #:with-credentials

@@ -14,7 +14,10 @@ Requirements
 
 You will need
 
- - [Drakma](http://weitz.de/drakma/) -- My version is quite out-of-date (0.11.5); IIRC there were some major non-backwardscompatible changes in some Weitz libs a while ago, so this might be woefully out of date.
+ - [Drakma](http://weitz.de/drakma/) -- I am using version 1.0.
  - [cl-json](http://common-lisp.net/project/cl-json/) -- I am using 0.3.2
- - All dependencies of those two libs.
+ - flexi-streams (is a dependency of drakma anyway
+ - bordeaux-threads
+ - All dependencies of those libs above.
 
+There is also a beginning of some tests written in Lift, so you will need the lift library.

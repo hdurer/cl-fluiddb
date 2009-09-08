@@ -27,6 +27,10 @@ or a list of two values (server port)")
   "The string to be used as your user agent when making request.
 This might allow FluidInfo to better monitor what app is using their service")
 
+(defvar *call-timeout* nil
+  "Timeout (in seconds) to use for any call to the FluidDB server.
+If a timeout happens, a bordeaux-threads:timeout condition will be raised.
+A value of nil means not to use any timeout.")
 
 (define-condition call-error (error)
   ((status-code :initarg :status-code :accessor status-code)
@@ -60,62 +64,59 @@ We inspect the return data and convert it to a lisp data structure if it is json
                        body-data))
         (accept accept)
         (additional-headers '(("accept-encoding" . "base64" #+nil"identity;1.0, base64; 0.5"))))
-    (multiple-value-bind (raw-response code headers url stream should-close status-text)
-        (handler-case
-            (drakma:http-request url
-                                 :parameters query-data
-                                 :method method
-                                 :close nil :keep-alive t 
-                                 :stream *connection*
-                                 :content body-data
-                                 :content-type content-type
-                                 :accept accept
-                                 :additional-headers additional-headers
-                                 :user-agent *user-agent*
-                                 :basic-authorization *credentials*
-                                 :proxy *proxy-server*
-                                 :proxy-basic-authorization *proxy-credentials*)
-          (error (ex) ;; assume a stale file handle and just re-try with a fresh one
-            (when drakma:*header-stream*
-              (format drakma:*header-stream* "~%cl-fluiddb: caught condition ~a -- retrying with fresh stream" ex))
-            (setf *connection* nil)
-            (drakma:http-request url
-                                 :parameters query-data
-                                 :method method
-                                 :close nil :keep-alive t 
-                                 :stream nil
-                                 :content body-data
-                                 :content-type content-type
-                                 :accept accept
-                                 :additional-headers additional-headers
-                                 :user-agent *user-agent*
-                                 :basic-authorization *credentials*
-                                 :proxy *proxy-server*
-                                 :proxy-basic-authorization *proxy-credentials*)))
-      (declare (ignore url))
-      (if should-close
-          (progn
-            (close stream)
-            (setf *connection* nil))
-          (setf *connection* stream))
-      (let* ((content-type (cdr (assoc :content-type headers)))
-             (response (if (string-equal "application/json" content-type)
-                           (json:decode-json-from-string
-                            (flexi-streams:octets-to-string raw-response :external-format :utf-8))
-                           raw-response)))
-        (if (<= 200 code 299)
-            ;; a good answer
-            (values response
-                    code
-                    status-text
-                    raw-response
-                    content-type
-                    headers)
-            ;; some error in the call
-            (error 'call-error
-                    :status-code code
-                    :status-message status-text
-                    :error-body response))))))
+    (labels ((make-call ()
+               (drakma:http-request url
+                                    :parameters query-data
+                                    :method method
+                                    :close nil :keep-alive t 
+                                    :stream *connection*
+                                    :content body-data
+                                    :content-type content-type
+                                    :accept accept
+                                    :additional-headers additional-headers
+                                    :user-agent *user-agent*
+                                    :basic-authorization *credentials*
+                                    :proxy *proxy-server*
+                                    :proxy-basic-authorization *proxy-credentials*))
+             (do-call ()
+               (multiple-value-bind (raw-response code headers url stream should-close status-text)
+                   (handler-case
+                       ;; try to make the call
+                       (make-call)
+                     (error (ex) ;; assume a stale file handle and just re-try with a fresh one
+                       (when drakma:*header-stream*
+                         (format drakma:*header-stream* "~%cl-fluiddb: caught condition ~a -- retrying with fresh stream" ex))
+                       (setf *connection* nil)
+                       ;; and call again...
+                       (make-call)))
+                 (declare (ignore url))
+                 (if should-close
+                     (progn
+                       (close stream)
+                       (setf *connection* nil))
+                     (setf *connection* stream))
+                 (let* ((content-type (cdr (assoc :content-type headers)))
+                        (response (if (string-equal "application/json" content-type)
+                                      (json:decode-json-from-string
+                                       (flexi-streams:octets-to-string raw-response :external-format :utf-8))
+                                      raw-response)))
+                   (if (<= 200 code 299)
+                       ;; a good answer
+                       (values response
+                               code
+                               status-text
+                               raw-response
+                               content-type
+                               headers)
+                       ;; some error in the call
+                       (error 'call-error
+                              :status-code code
+                              :status-message status-text
+                              :error-body response))))))
+      (if *call-timeout*
+          (bordeaux-threads:with-timeout (*call-timeout*)
+            (do-call))
+          (do-call)))))
 
 (defun to-string (something)
   "Do sensible conversion to a string"

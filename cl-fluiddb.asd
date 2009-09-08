@@ -18,6 +18,6 @@ diagnostic output.")
   
   :serial t
   :version #.*cl-fluiddb-version*
-  :depends-on (:cl-json :drakma :flexi-streams)
+  :depends-on (:cl-json :drakma :flexi-streams :bordeaux-threads)
   :components ((:file "defpackage")
                (:file "fluiddb")))
