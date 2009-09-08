@@ -3,18 +3,17 @@
 (defun clean-up-namespace (ns)
   "Do best effort of removing a namespace by recursively removing all tags and sub-namespaces before atempting to remove the namespace itself.
 This function should never fail and nevr hang, but it may fail to complete its task if things go wrong."
-  (let* ((res (ignore-errors
-                (with-timeout (5)
-                  (get-namespace ns
-                                 :return-description nil))))
+  (let* ((*call-timeout* 5)
+         (res (ignore-errors
+                (get-namespace ns
+                               :return-description nil)))
          (failures (unless res
                     (list (format nil "get ns ~a" ns)))))
     (when res
       (loop
          for tag in (cdr (assoc :tag-names res))
-         unless (ignore-errors (with-timeout (5)
-                                 (delete-tag ns tag)
-                                 'ok))
+         unless (ignore-errors (delete-tag ns tag)
+                               'ok)
          do (push (format nil "tag ~a/~a" ns tag)
                   failures))
       (loop
@@ -22,9 +21,8 @@ This function should never fail and nevr hang, but it may fail to complete its t
          for result = (clean-up-namespace (concatenate 'string ns "/" subns))
          unless result
          do (push result failures))
-      (unless (ignore-errors (with-timeout (5)
-                                 (delete-namespace ns)
-                                 'ok))
+      (unless (ignore-errors (delete-namespace ns)
+                             'ok)
         (push (format nil "ns ~a" ns) failures)))
     failures))
 
@@ -37,31 +35,59 @@ This function should never fail and nevr hang, but it may fail to complete its t
   (:timeout 120)
   (:dynamic-variables
    (*connection* nil)
-   (*credentials* nil))
+   (*credentials* nil)
+   (*call-timeout* 10))
   (:setup (setf fluiddb-id (cdr (assoc :id
                                        (ignore-errors (create-object "FluidDB"))))
                 test-id (cdr (assoc :id
                                     (ignore-errors (create-object "Test"))))))
   (:tests
+   (check-setup
+    (ensure-null (not test-id))
+    (ensure-null (not fluiddb-id)))
    (check-get-user
-    (ensure-no-warning
-      (with-timeout (10)
-        (get-user "test")))
-    (ensure-warning
-      (with-timeout (10)
-        (get-user "")))
-    (ensure-warning
-      (with-timeout (10)
-        (get-user "some-really-long-name-that-should-not-really-exist"))))
+    (ensure-null
+     (not (get-user "test")))
+    (ensure-error
+      (get-user ""))
+    (ensure-error
+      (get-user "some-really-long-name-that-should-not-really-exist")))
    (check-ids-are-consistent
     (ensure-same (cdr (assoc :id (create-object "FluidDB")))
                  fluiddb-id
                  :test #'string-equal)
-    (ensure-same (cdr (assoc :id (create-object "Test")))
-                 test-id
-                 :test #'string-equal))
+    (when test-id
+      (ensure-same (cdr (assoc :id (create-object "Test")))
+                   test-id
+                   :test #'string-equal)))
    (check-test-id-and-fluiddb-id-are-different
-    (ensure  (lambda () (not (equalp fluiddb-id test-id)))))))
+    (ensure (lambda () (not (equalp fluiddb-id test-id)))))
+   (check-timeout-works
+    (ensure-condition #+sbcl sb-ext:timeout #-sbcl bordeaux-threads:timeout
+      (let ((*call-timeout* 1)
+            (*connection* nil))
+        ;; with a short timeout do a long-running query
+        (query-objects "has fluiddb/about and has fluiddb/about  and has fluiddb/about and has fluiddb/about and has fluiddb/about and has fluiddb/about and has fluiddb/about and has fluiddb/about and has fluiddb/about and has fluiddb/about and has fluiddb/about and has fluiddb/about and has fluiddb/about and has fluiddb/about and has fluiddb/about and has fluiddb/about and has fluiddb/about and has fluiddb/about and has fluiddb/about and has fluiddb/about"))))
+   (check-get-object
+    (let (returned-object-1
+          returned-object-2)
+      (ensure-no-warning
+        (setf returned-object-1
+              (get-object test-id :show-about nil)
+              returned-object-2
+              (get-object test-id :show-about t)))
+      (ensure (lambda ()
+                (equalp (assoc :id returned-object-1)
+                        (assoc :id returned-object-2))))
+      (ensure-null (assoc :about returned-object-1))
+      (ensure-null (not (assoc :about returned-object-2)))))
+   (check-query-objects
+    (let ((*call-timeout* 100)) ;; increase timeout so we don't fail on lots of results
+      (let ((ids (assoc :ids (query-objects "has fluiddb/about"))))
+        (ensure (lambda () (> (length (cdr ids)) 5)))))
+    (let ((ids (assoc :ids (query-objects "fluiddb/about contains \"something\""))))
+      (ensure-null (not ids))
+      (ensure-same 0 (length (cdr ids)))))))
 
 
 (deftestsuite authenticated-operations ()
@@ -72,15 +98,15 @@ This function should never fail and nevr hang, but it may fail to complete its t
    temp-ns-oid)
   (:documentation
    "Simple tests requiring authentication (using the tet user)")
-  (:timeout 120)
+  (:timeout 300)
   (:dynamic-variables
    (*connection* nil)
-   (*credentials* (list "test" "test")))
+   (*credentials* (list "test" "test"))
+   (*call-timeout* 10))
   (:run-setup :once-per-suite)
   (:setup
    (ignore-errors
-     (with-timeout (5)
-       (create-namespace "test" "cl-fluiddb" "Namespace for cl-fluiddb tests")))
+     (create-namespace "test" "cl-fluiddb" "Namespace for cl-fluiddb tests"))
    (setf temp-ns-oid
          (assoc :id
                 (ignore-errors
@@ -92,23 +118,17 @@ This function should never fail and nevr hang, but it may fail to complete its t
    (can-create-tag
     (when temp-ns
       (ensure-no-warning
-        (with-timeout (10)
-          (create-tag temp-ns "tag1" "" nil)))
+        (create-tag temp-ns "tag1" "" nil))
       (ensure-no-warning
-        (with-timeout (10)
-          (create-tag temp-ns "tag2" "some other tag" t)))))
+        (create-tag temp-ns "tag2" "some other tag" t))))
    (can-create/delete-ns
     (let ((have-ns1 nil)
           (ns1-fullname (concatenate 'string temp-ns  "/ns1")))
       (when temp-ns
-        (ensure-no-warning
-          (with-timeout (10)
-            (create-namespace temp-ns "ns1" "some namespace")
-            (setf have-ns1 t)))
+        (create-namespace temp-ns "ns1" "some namespace")
+        (setf have-ns1 t)
         (when have-ns1
           (ensure-no-warning
-            (with-timeout (10)
-              (change-namespace ns1-fullname "new description")))
+            (change-namespace ns1-fullname "new description"))
           (ensure-no-warning
-            (with-timeout (10)
-              (delete-namespace ns1-fullname)))))))))
+            (delete-namespace ns1-fullname))))))))

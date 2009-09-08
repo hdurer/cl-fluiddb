@@ -3,5 +3,8 @@
 (defpackage #:cl-fluiddb-test
   (:use #:cl #:lift #:cl-fluiddb)
   (:export
+   #:simple-access
+
+   
    ))
 
