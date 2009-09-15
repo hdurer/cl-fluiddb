@@ -269,6 +269,7 @@ We inspect the return data and convert it to a lisp data structure if it is json
                              user-name "/"
                              (to-string category) "/"
                              (to-string action))
+                :method :post
                 :body-data (make-permission-object policy exceptions)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
