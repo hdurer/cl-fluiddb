@@ -35,11 +35,15 @@ A value of nil means not to use any timeout.")
 (define-condition call-error (error)
   ((status-code :initarg :status-code :accessor status-code)
    (status-message :initarg :status-message :accessor status-message)
+   (error-class :initarg :error-class :accessor error-class)
+   (request-id :initarg :request-id :accessor request-id)
    (error-body :initarg :error-body :accessor error-body))
   (:report (lambda (condition stream)
-             (format stream "FluidDB server returned error code ~a - ~s (~s)"
+             (format stream "FluidDB server returned error code ~a - ~s of class ~s for request ~s (~s)"
                      (status-code condition)
                      (status-message condition)
+                     (error-class condition)
+                     (request-id condition)
                      (error-body condition)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -109,10 +113,18 @@ We inspect the return data and convert it to a lisp data structure if it is json
                                content-type
                                headers)
                        ;; some error in the call
+                       (let ((error-class (or (cdr (assoc "X-FluidDB-Error-Class" headers
+                                                          :test #'string-equal))
+                                              "no error class set"))
+                             (request-id (or (cdr (assoc "X-FluidDB-Request-Id" headers
+                                                         :test #'string-equal))
+                                             "no request id set")))
                        (error 'call-error
                               :status-code code
                               :status-message status-text
-                              :error-body response))))))
+                              :error-class error-class
+                              :request-id request-id
+                              :error-body response)))))))
       (if *call-timeout*
           (bordeaux-threads:with-timeout (*call-timeout*)
             (do-call))
@@ -170,26 +182,39 @@ We inspect the return data and convert it to a lisp data structure if it is json
 
 (defun create-object (&optional about)
   (send-request "objects"
-                :body-data (json:encode-json-plist-to-string
-                            (when about (list "about" about)))
+                :body-data (when (or about (not *using-sandbox*))
+                             ;; on old instance we always need to send
+                             ;; something; on sandbox this can be
+                             ;; empty
+                             (json:encode-json-plist-to-string
+                              (when about (list "about" about))))
                 :method :post))
 
 (defun get-object-tag-value (id tag &key want-json accept)
   (send-request (concatenate 'string "objects/" id "/" tag)
-                :query-data (when want-json '(("format" . "json")))
-                :accept (if want-json "application/json" (or accept "*/*"))))
+                :query-data (unless *using-sandbox*
+                              (when want-json '(("format" . "json")))) 
+                :accept (if want-json
+                            (if *using-sandbox*
+                                "application/vnd.fluiddb.value+json"
+                                "application/json")
+                            (or accept "*/*"))))
 
 (defun set-object-tag-value (id tag content &optional content-type)
   (send-request (concatenate 'string "objects/" id "/" tag)
                 :method :put
-                :query-data (unless content-type
-                              '(("format" . "json")))
+                :query-data (unless *using-sandbox*
+                              (unless content-type
+                                '(("format" . "json"))))
                 :body-data (if content-type
                                ;; assume pre-formatted
                                content
                                ;; encode into json
                                (json:encode-json-alist-to-string content))
-                :content-type (or content-type "application/json")))
+                :content-type (or content-type
+                                  (if *using-sandbox*
+                                      "application/vnd.fluiddb.value+json"
+                                      "application/json"))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

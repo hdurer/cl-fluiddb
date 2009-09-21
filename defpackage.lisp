@@ -14,6 +14,11 @@
    
    ;; functions and macros
    #:with-credentials
+   #:status-code
+   #:status-message
+   #:error-class
+   #:request-id
+   #:error-body
    
    #:get-user
    
