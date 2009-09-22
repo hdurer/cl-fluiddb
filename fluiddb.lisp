@@ -100,7 +100,8 @@ We inspect the return data and convert it to a lisp data structure if it is json
                        (setf *connection* nil))
                      (setf *connection* stream))
                  (let* ((content-type (cdr (assoc :content-type headers)))
-                        (response (if (string-equal "application/json" content-type)
+                        (response (if (or (string-equal "application/json" content-type)
+                                          (string-equal "application/vnd.fluiddb.value+json" content-type))
                                       (json:decode-json-from-string
                                        (flexi-streams:octets-to-string raw-response :external-format :utf-8))
                                       raw-response)))
@@ -294,7 +295,7 @@ We inspect the return data and convert it to a lisp data structure if it is json
                              user-name "/"
                              (to-string category) "/"
                              (to-string action))
-                :method :post
+                :method :put
                 :body-data (make-permission-object policy exceptions)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -316,12 +317,15 @@ We inspect the return data and convert it to a lisp data structure if it is json
                              "tags/" namespace "/"
                              tag)
                 :query-data `(("returnDescription" . ,(if return-description t nil)))))
+
+
 (defun change-tag (namespace tag description)
   (send-request (concatenate 'string
                              "tags/" namespace "/"
                              tag)
                 :method :put
                 :body-data `(("description" . ,description))))
+
 
 (defun delete-tag (namespace tag)
   (send-request (concatenate 'string
