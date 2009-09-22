@@ -249,32 +249,32 @@ We inspect the return data and convert it to a lisp data structure if it is json
 
 (defun get-namespace-permissions (namespace action)
   (send-request (concatenate 'string "permissions/namespaces/" namespace)
-                :query-data `(("action" . ,action))))
+                :query-data `(("action" . ,(to-string action)))))
 
 (defun set-namespace-permissions (namespace action policy exceptions)
   (send-request (concatenate 'string "permissions/namespaces/" namespace)
                 :method :put
-                :query-data `(("action" . ,action))
+                :query-data `(("action" . ,(to-string action)))
                 :body-data (make-permission-object policy exceptions)))
 
 (defun get-tag-permissions (tag action)
   (send-request (concatenate 'string "permissions/tags/" tag)
-                :query-data `(("action" . ,action))))
+                :query-data `(("action" . ,(to-string action)))))
 
 (defun set-tag-permissions (tag action policy exceptions)
   (send-request (concatenate 'string "permissions/tags/" tag)
                 :method :put
-                :query-data `(("action" . ,action))
+                :query-data `(("action" . ,(to-string action)))
                 :body-data (make-permission-object policy exceptions)))
 
 (defun get-tag-value-permissions (tag action)
   (send-request (concatenate 'string "permissions/tag-values/" tag)
-                :query-data `(("action" . ,action))))
+                :query-data `(("action" . ,(to-string action)))))
 
 (defun set-tag-value-permissions (tag action policy exceptions)
   (send-request (concatenate 'string "permissions/tag-values/" tag)
                 :method :put
-                :query-data `(("action" . ,action))
+                :query-data `(("action" . ,(to-string action)))
                 :body-data (make-permission-object policy exceptions)))
 
 
