@@ -201,7 +201,7 @@ We inspect the return data and convert it to a lisp data structure if it is json
                                ;; assume pre-formatted
                                content
                                ;; encode into json
-                               (json:encode-json-alist-to-string content))
+                               (json:encode-json-to-string content))
                 :content-type (or content-type
                                   "application/vnd.fluiddb.value+json")))
 
