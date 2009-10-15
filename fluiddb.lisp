@@ -183,39 +183,27 @@ We inspect the return data and convert it to a lisp data structure if it is json
 
 (defun create-object (&optional about)
   (send-request "objects"
-                :body-data (when (or about (not *using-sandbox*))
-                             ;; on old instance we always need to send
-                             ;; something; on sandbox this can be
-                             ;; empty
+                :body-data (when about
                              (json:encode-json-plist-to-string
-                              (when about (list "about" about))))
+                              (list "about" about)))
                 :method :post))
 
 (defun get-object-tag-value (id tag &key want-json accept)
   (send-request (concatenate 'string "objects/" id "/" tag)
-                :query-data (unless *using-sandbox*
-                              (when want-json '(("format" . "json")))) 
                 :accept (if want-json
-                            (if *using-sandbox*
-                                "application/vnd.fluiddb.value+json"
-                                "application/json")
+                            "application/vnd.fluiddb.value+json"
                             (or accept "*/*"))))
 
 (defun set-object-tag-value (id tag content &optional content-type)
   (send-request (concatenate 'string "objects/" id "/" tag)
                 :method :put
-                :query-data (unless *using-sandbox*
-                              (unless content-type
-                                '(("format" . "json"))))
                 :body-data (if content-type
                                ;; assume pre-formatted
                                content
                                ;; encode into json
                                (json:encode-json-alist-to-string content))
                 :content-type (or content-type
-                                  (if *using-sandbox*
-                                      "application/vnd.fluiddb.value+json"
-                                      "application/json"))))
+                                  "application/vnd.fluiddb.value+json")))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -316,7 +304,7 @@ We inspect the return data and convert it to a lisp data structure if it is json
   (send-request (concatenate 'string
                              "tags/" namespace "/"
                              tag)
-                :query-data `(("returnDescription" . ,(if return-description t nil)))))
+                :query-data `(("returnDescription" . ,(if return-description "True" "False")))))
 
 
 (defun change-tag (namespace tag description)
