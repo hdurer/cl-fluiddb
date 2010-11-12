@@ -174,11 +174,13 @@ We inspect the return data and convert it to a lisp data structure if it is json
   `(let ((*credentials* (list ,username ,password)))
      ,@body))
 
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Users
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defun get-user (name)
   (send-request (concatenate 'string "users/" name)))
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Objects
@@ -187,6 +189,7 @@ We inspect the return data and convert it to a lisp data structure if it is json
   "Retrieve an object by its id"
   (send-request (concatenate 'string "objects/" id)
                 :query-data `(("showAbout" . ,(if show-about "True" "False")))))
+
 
 (defun get-object-about (about &key (show-about t))
   "Retrieve an object by its about tag"
@@ -197,12 +200,14 @@ We inspect the return data and convert it to a lisp data structure if it is json
   (send-request "objects"
                 :query-data `(("query" . ,query))))
 
+
 (defun create-object (&optional about)
   (send-request "objects"
                 :body-data (when about
                              (json:encode-json-plist-to-string
                               (list "about" about)))
                 :method :post))
+
 
 (defun get-object-tag-value (id tag &key want-json accept)
   (send-request (concatenate 'string "objects/" id "/" tag)
@@ -219,6 +224,7 @@ We inspect the return data and convert it to a lisp data structure if it is json
                 :accept (if want-json
                             "application/vnd.fluiddb.value+json"
                             (or accept "*/*"))))
+
 
 (defun object-about-tag-has-value-p (about namespaces tag)
   (handler-case
@@ -247,6 +253,7 @@ We inspect the return data and convert it to a lisp data structure if it is json
                 :content-type (or content-type
                                   "application/vnd.fluiddb.value+json")))
 
+
 (defun set-object-about-tag-value (about namespaces tag content &optional content-type)
   (send-request (concatenate 'string "about/" (url-encode about)
                              "/" (url-format-namespaces namespaces)
@@ -261,6 +268,13 @@ We inspect the return data and convert it to a lisp data structure if it is json
                                   "application/vnd.fluiddb.value+json")))
 
 
+(defun delete-object-about-tag-value (about namespaces tag content)
+  (send-request (concatenate 'string "about/" (url-encode about)
+                             "/" (url-format-namespaces namespaces)
+                             "/" tag)
+                :method :delete))
+
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Namespaces
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -269,17 +283,22 @@ We inspect the return data and convert it to a lisp data structure if it is json
                 :query-data `(("returnDescription" . ,(if return-description "True" "False"))
                               ("returnNamespaces" . ,(if return-namespace "True" "False"))
                               ("returnTags" . ,(if return-tags "True" "False")))))
+
+
 (defun create-namespace (ns name description)
   (send-request (concatenate 'string "namespaces/" ns)
                 :method :post
                 :body-data (json:encode-json-plist-to-string
                             (list "description" description
                                   "name" name))))
+
+
 (defun change-namespace (ns new-description)
   (send-request (concatenate 'string "namespaces/" ns)
                 :method :put
                 :body-data (json:encode-json-plist-to-string
                             (list "description" new-description))))
+
 
 (defun delete-namespace (ns)
   (send-request (concatenate 'string "namespaces/" ns)
@@ -289,10 +308,10 @@ We inspect the return data and convert it to a lisp data structure if it is json
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Permissions
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
 (defun get-namespace-permissions (namespace action)
   (send-request (concatenate 'string "permissions/namespaces/" namespace)
                 :query-data `(("action" . ,(to-string action)))))
+
 
 (defun set-namespace-permissions (namespace action policy exceptions)
   (send-request (concatenate 'string "permissions/namespaces/" namespace)
@@ -300,9 +319,11 @@ We inspect the return data and convert it to a lisp data structure if it is json
                 :query-data `(("action" . ,(to-string action)))
                 :body-data (make-permission-object policy exceptions)))
 
+
 (defun get-tag-permissions (tag action)
   (send-request (concatenate 'string "permissions/tags/" tag)
                 :query-data `(("action" . ,(to-string action)))))
+
 
 (defun set-tag-permissions (tag action policy exceptions)
   (send-request (concatenate 'string "permissions/tags/" tag)
@@ -314,6 +335,7 @@ We inspect the return data and convert it to a lisp data structure if it is json
   (send-request (concatenate 'string "permissions/tag-values/" tag)
                 :query-data `(("action" . ,(to-string action)))))
 
+
 (defun set-tag-value-permissions (tag action policy exceptions)
   (send-request (concatenate 'string "permissions/tag-values/" tag)
                 :method :put
@@ -324,13 +346,13 @@ We inspect the return data and convert it to a lisp data structure if it is json
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Policies
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
 (defun get-policy (user-name category action)
   (send-request (concatenate 'string
                              "policies/"
                              user-name "/"
                              (to-string category) "/"
                              (to-string action))))
+
 
 (defun set-policy (user-name category action policy exceptions)
   (send-request (concatenate 'string
@@ -341,10 +363,10 @@ We inspect the return data and convert it to a lisp data structure if it is json
                 :method :put
                 :body-data (make-permission-object policy exceptions)))
 
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Tags
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
 (defun create-tag (namespace tag description indexed)
   (send-request (concatenate 'string
                              "tags/" namespace)
