@@ -46,10 +46,11 @@ A value of nil means not to use any timeout.")
                      (request-id condition)
                      (error-body condition)))))
 
+
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Helper functions
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
 
 
 (defun send-request (url &key body-data query-data (accept "application/json") (method :get) (content-type "application/json"))
@@ -63,7 +64,7 @@ We inspect the return data and convert it to a lisp data structure if it is json
                           *server-url* "/"
                           url))
         (body-data (if (and body-data (stringp body-data))
-                       ;; convert to UTF-8 as my Drakma version get lenght wrong otherwise
+                       ;; convert to UTF-8 as my Drakma version gets length wrong otherwise
                        (flexi-streams:string-to-octets body-data :external-format :utf-8)
                        body-data))
         (accept accept)
@@ -131,6 +132,16 @@ We inspect the return data and convert it to a lisp data structure if it is json
             (do-call))
           (do-call)))))
 
+(defun url-encode (string)
+  "URL encode a string so it's safe to include in an URL"
+  (drakma::url-encode string :utf-8))
+
+(defun url-format-namespaces (namespaces)
+  (typecase namespaces
+    (string namespaces)
+    (list (format nil "~{~A~^/~}" (mapcar #'url-encode namespaces)))
+    (t (error "url-format-namespaces only accepts a string or a list but not ~s" namespaces))))
+
 (defun to-string (something)
   "Do sensible conversion to a string"
   (typecase something
@@ -173,8 +184,13 @@ We inspect the return data and convert it to a lisp data structure if it is json
 ;; Objects
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defun get-object (id &key (show-about t))
+  "Retrieve an object by its id"
   (send-request (concatenate 'string "objects/" id)
                 :query-data `(("showAbout" . ,(if show-about "True" "False")))))
+
+(defun get-object-about (about &key (show-about t))
+  "Retrieve an object by its about tag"
+  (send-request (concatenate 'string "about/" (url-encode about))))
 
 
 (defun query-objects (query)
@@ -194,8 +210,47 @@ We inspect the return data and convert it to a lisp data structure if it is json
                             "application/vnd.fluiddb.value+json"
                             (or accept "*/*"))))
 
+
+(defun get-object-about-tag-value (about namespaces tag &key want-json accept)
+  (send-request (concatenate 'string 
+                             "about/" (url-encode about) 
+                             "/" (url-format-namespaces namespaces) 
+                             "/" tag)
+                :accept (if want-json
+                            "application/vnd.fluiddb.value+json"
+                            (or accept "*/*"))))
+
+(defun object-about-tag-has-value-p (about namespaces tag)
+  (handler-case
+   (multiple-value-bind (response status-code status-text raw-response content-type )
+       (send-request (concatenate 'string 
+                                  "about/" (url-encode about) 
+                                  "/" (url-format-namespaces namespaces) 
+                                  "/" tag)
+                     :method :head)
+     (declare (ignore response status-code status-text raw-response))
+     content-type)
+   (call-error (ex)
+               (if (= 404 (status-code ex))
+                   nil
+                 (error ex)))))
+
+
 (defun set-object-tag-value (id tag content &optional content-type)
   (send-request (concatenate 'string "objects/" id "/" tag)
+                :method :put
+                :body-data (if content-type
+                               ;; assume pre-formatted
+                               content
+                               ;; encode into json
+                               (json:encode-json-to-string content))
+                :content-type (or content-type
+                                  "application/vnd.fluiddb.value+json")))
+
+(defun set-object-about-tag-value (about namespaces tag content &optional content-type)
+  (send-request (concatenate 'string "about/" (url-encode about)
+                             "/" (url-format-namespaces namespaces)
+                             "/" tag)
                 :method :put
                 :body-data (if content-type
                                ;; assume pre-formatted
