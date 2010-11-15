@@ -2,7 +2,7 @@
 
 (defun clean-up-namespace (ns)
   "Do best effort of removing a namespace by recursively removing all tags and sub-namespaces before atempting to remove the namespace itself.
-This function should never fail and nevr hang, but it may fail to complete its task if things go wrong."
+This function should never fail and never hang, but it may fail to complete its task if things go wrong."
   (let* ((*call-timeout* 5)
          (res (ignore-errors
                 (get-namespace ns
