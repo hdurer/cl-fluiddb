@@ -52,22 +52,36 @@ A value of nil means not to use any timeout.")
 ;; Helper functions
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(defun throw-call-error (status-code status-text headers response-body)
+  (let ((error-class (or (cdr (assoc "X-FluidDB-Error-Class" headers
+                                     :test #'string-equal))
+                         "no error class set"))
+        (request-id (or (cdr (assoc "X-FluidDB-Request-Id" headers
+                                    :test #'string-equal))
+                        "no request id set")))
+    (error 'call-error
+           :status-code status-code
+           :status-message status-text
+           :error-class error-class
+           :request-id request-id
+           :error-body response-body)))
 
-(defun send-request (url &key body-data query-data (accept "application/json") (method :get) (content-type "application/json"))
-  "Send a request to FluidDB.
+
+(defun do-send-request (path &key body-data query-data (accept "application/json") (method :get) (content-type "application/json"))
+  "Lower-level routine to send a request to FluidDB.
 Set accept to the content-type you want (\"*/*\" if you don't know).
 
-We inspect the return data and convert it to a lisp data structure if it is json"
+This does not interpret the results and just returns the HTTP response.
+It may still throw errors on network problems, timeouts etc."
   (let ((drakma:*drakma-default-external-format* :utf-8)
         (url (concatenate 'string
                           (if *use-https* "https://" "http://")
                           *server-url* "/"
-                          url))
+                          path))
         (body-data (if (and body-data (stringp body-data))
                        ;; convert to UTF-8 as my Drakma version gets length wrong otherwise
                        (flexi-streams:string-to-octets body-data :external-format :utf-8)
                        body-data))
-        (accept accept)
         (additional-headers '(("accept-encoding" . "base64" #+nil"identity;1.0, base64; 0.5"))))
     (labels ((make-call ()
                (drakma:http-request url
@@ -94,53 +108,61 @@ We inspect the return data and convert it to a lisp data structure if it is json
                        (setf *connection* nil)
                        ;; and call again...
                        (make-call)))
-                 (declare (ignore url))
                  (if should-close
                      (progn
                        (close stream)
                        (setf *connection* nil))
                      (setf *connection* stream))
-                 (let* ((content-type (cdr (assoc :content-type headers)))
-                        (response (if (or (string-equal "application/json" content-type)
-                                          (string-equal "application/vnd.fluiddb.value+json" content-type))
-                                      (json:decode-json-from-string
-                                       (flexi-streams:octets-to-string raw-response :external-format :utf-8))
-                                      raw-response)))
-                   (if (<= 200 code 299)
-                       ;; a good answer
-                       (values response
-                               code
-                               status-text
-                               raw-response
-                               content-type
-                               headers)
-                       ;; some error in the call
-                       (let ((error-class (or (cdr (assoc "X-FluidDB-Error-Class" headers
-                                                          :test #'string-equal))
-                                              "no error class set"))
-                             (request-id (or (cdr (assoc "X-FluidDB-Request-Id" headers
-                                                         :test #'string-equal))
-                                             "no request id set")))
-                       (error 'call-error
-                              :status-code code
-                              :status-message status-text
-                              :error-class error-class
-                              :request-id request-id
-                              :error-body response)))))))
+                 (values code status-text
+                         raw-response
+                         headers
+                         url))))
       (if *call-timeout*
           (bordeaux-threads:with-timeout (*call-timeout*)
             (do-call))
           (do-call)))))
 
+(defun send-request (path &key body-data query-data (accept "application/json") (method :get) (content-type "application/json"))
+  "Send a request to FluidDB.
+Set accept to the content-type you want (\"*/*\" if you don't know).
+
+We inspect the return data and convert it to a lisp data structure if it is json"
+  (multiple-value-bind (status-code status-text raw-response headers)
+      (do-send-request path
+                       :body-data body-data
+                       :query-data query-data
+                       :accept accept
+                       :method method
+                       :content-type content-type)
+    (let* ((content-type (cdr (assoc :content-type headers)))
+           (response (if (or (string-equal "application/json" content-type)
+                             (string-equal "application/vnd.fluiddb.value+json" content-type))
+                         (json:decode-json-from-string
+                          (flexi-streams:octets-to-string raw-response :external-format :utf-8))
+                       raw-response)))
+      (if (<= 200 status-code 299)
+          ;; a good answer
+          (values response
+                  status-code
+                  status-text
+                  raw-response
+                  content-type
+                  headers)
+        ;; some error in the call
+        (throw-call-error status-code status-text headers response)))))
+
+
 (defun url-encode (string)
   "URL encode a string so it's safe to include in an URL"
   (drakma::url-encode string :utf-8))
 
-(defun url-format-namespaces (namespaces)
-  (typecase namespaces
-    (string namespaces)
-    (list (format nil "~{~A~^/~}" (mapcar #'url-encode namespaces)))
-    (t (error "url-format-namespaces only accepts a string or a list but not ~s" namespaces))))
+
+(defun url-format-tag (tag)
+  (typecase tag
+    (string tag)
+    (list (format nil "~{~A~^/~}" (mapcar #'url-encode tag)))
+    (t (error "url-format-tag only accepts a string or a list but not ~s" tag))))
+
 
 (defun to-string (something)
   "Do sensible conversion to a string"
@@ -191,7 +213,7 @@ We inspect the return data and convert it to a lisp data structure if it is json
                 :query-data `(("showAbout" . ,(if show-about "True" "False")))))
 
 
-(defun get-object-about (about &key (show-about t))
+(defun get-object-about (about)
   "Retrieve an object by its about tag"
   (send-request (concatenate 'string "about/" (url-encode about))))
 
@@ -210,40 +232,57 @@ We inspect the return data and convert it to a lisp data structure if it is json
 
 
 (defun get-object-tag-value (id tag &key want-json accept)
-  (send-request (concatenate 'string "objects/" id "/" tag)
+  (send-request (concatenate 'string "objects/" id "/" (url-format-tag tag))
                 :accept (if want-json
                             "application/vnd.fluiddb.value+json"
                             (or accept "*/*"))))
 
 
-(defun get-object-about-tag-value (about namespaces tag &key want-json accept)
+(defun get-object-about-tag-value (about tag &key want-json accept)
   (send-request (concatenate 'string 
                              "about/" (url-encode about) 
-                             "/" (url-format-namespaces namespaces) 
-                             "/" tag)
+                             "/" (url-format-tag tag))
                 :accept (if want-json
                             "application/vnd.fluiddb.value+json"
                             (or accept "*/*"))))
 
 
-(defun object-about-tag-has-value-p (about namespaces tag)
-  (handler-case
-   (multiple-value-bind (response status-code status-text raw-response content-type )
-       (send-request (concatenate 'string 
-                                  "about/" (url-encode about) 
-                                  "/" (url-format-namespaces namespaces) 
-                                  "/" tag)
-                     :method :head)
-     (declare (ignore response status-code status-text raw-response))
-     content-type)
-   (call-error (ex)
-               (if (= 404 (status-code ex))
-                   nil
-                 (error ex)))))
+(defun object-tag-has-value-p (id tag)
+  (multiple-value-bind (status-code status-text body headers)
+      (do-send-request (concatenate 'string 
+                                    "objects/" id
+                                    "/" (url-format-tag tag))
+                       :method :head)
+    (cond ((<= 200 status-code 299)
+           ;; the tag values exist, return a true value (content-type if included in response)
+           (or (cdr (assoc :content-type headers))
+               t))
+          ((= 404 status-code)
+           ;; No such tag value
+           nil)
+          (t
+           (throw-call-error status-code status-text headers body)))))
+
+
+(defun object-about-tag-has-value-p (about tag)
+  (multiple-value-bind (status-code status-text body headers)
+      (do-send-request (concatenate 'string 
+                                    "about/" (url-encode about) 
+                                    "/" (url-format-tag tag))
+                       :method :head)
+    (cond ((<= 200 status-code 299)
+           ;; the tag values exist, return a true value (content-type if included in response)
+           (or (cdr (assoc :content-type headers))
+               t))
+          ((= 404 status-code)
+           ;; No such tag value
+           nil)
+          (t
+           (make-call-error status-code status-text headers body)))))
 
 
 (defun set-object-tag-value (id tag content &optional content-type)
-  (send-request (concatenate 'string "objects/" id "/" tag)
+  (send-request (concatenate 'string "objects/" id "/" (url-format-tag tag))
                 :method :put
                 :body-data (if content-type
                                ;; assume pre-formatted
@@ -254,10 +293,9 @@ We inspect the return data and convert it to a lisp data structure if it is json
                                   "application/vnd.fluiddb.value+json")))
 
 
-(defun set-object-about-tag-value (about namespaces tag content &optional content-type)
+(defun set-object-about-tag-value (about tag content &optional content-type)
   (send-request (concatenate 'string "about/" (url-encode about)
-                             "/" (url-format-namespaces namespaces)
-                             "/" tag)
+                             "/" (url-format-tag tag))
                 :method :put
                 :body-data (if content-type
                                ;; assume pre-formatted
@@ -268,10 +306,14 @@ We inspect the return data and convert it to a lisp data structure if it is json
                                   "application/vnd.fluiddb.value+json")))
 
 
-(defun delete-object-about-tag-value (about namespaces tag content)
+(defun delete-object-tag-value (id tag)
+  (send-request (concatenate 'string "object/" id "/" (url-format-tag tag))
+                :method :delete))
+
+
+(defun delete-object-about-tag-value (about tag)
   (send-request (concatenate 'string "about/" (url-encode about)
-                             "/" (url-format-namespaces namespaces)
-                             "/" tag)
+                             "/" (url-format-tag tag))
                 :method :delete))
 
 
@@ -279,14 +321,14 @@ We inspect the return data and convert it to a lisp data structure if it is json
 ;; Namespaces
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defun get-namespace (ns &key (return-description t) (return-namespace t) (return-tags t))
-  (send-request (concatenate 'string "namespaces/" ns)
+  (send-request (concatenate 'string "namespaces/" (url-format-tag ns))
                 :query-data `(("returnDescription" . ,(if return-description "True" "False"))
                               ("returnNamespaces" . ,(if return-namespace "True" "False"))
                               ("returnTags" . ,(if return-tags "True" "False")))))
 
 
 (defun create-namespace (ns name description)
-  (send-request (concatenate 'string "namespaces/" ns)
+  (send-request (concatenate 'string "namespaces/" (url-format-tag ns))
                 :method :post
                 :body-data (json:encode-json-plist-to-string
                             (list "description" description
@@ -294,14 +336,14 @@ We inspect the return data and convert it to a lisp data structure if it is json
 
 
 (defun change-namespace (ns new-description)
-  (send-request (concatenate 'string "namespaces/" ns)
+  (send-request (concatenate 'string "namespaces/" (url-format-tag ns))
                 :method :put
                 :body-data (json:encode-json-plist-to-string
                             (list "description" new-description))))
 
 
 (defun delete-namespace (ns)
-  (send-request (concatenate 'string "namespaces/" ns)
+  (send-request (concatenate 'string "namespaces/" (url-format-tag ns))
                 :method :delete))
 
 
@@ -309,35 +351,35 @@ We inspect the return data and convert it to a lisp data structure if it is json
 ;; Permissions
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defun get-namespace-permissions (namespace action)
-  (send-request (concatenate 'string "permissions/namespaces/" namespace)
+  (send-request (concatenate 'string "permissions/namespaces/" (url-format-tag namespace))
                 :query-data `(("action" . ,(to-string action)))))
 
 
 (defun set-namespace-permissions (namespace action policy exceptions)
-  (send-request (concatenate 'string "permissions/namespaces/" namespace)
+  (send-request (concatenate 'string "permissions/namespaces/" (url-format-tag namespace))
                 :method :put
                 :query-data `(("action" . ,(to-string action)))
                 :body-data (make-permission-object policy exceptions)))
 
 
 (defun get-tag-permissions (tag action)
-  (send-request (concatenate 'string "permissions/tags/" tag)
+  (send-request (concatenate 'string "permissions/tags/" (url-format-tag tag))
                 :query-data `(("action" . ,(to-string action)))))
 
 
 (defun set-tag-permissions (tag action policy exceptions)
-  (send-request (concatenate 'string "permissions/tags/" tag)
+  (send-request (concatenate 'string "permissions/tags/" (url-format-tag tag))
                 :method :put
                 :query-data `(("action" . ,(to-string action)))
                 :body-data (make-permission-object policy exceptions)))
 
 (defun get-tag-value-permissions (tag action)
-  (send-request (concatenate 'string "permissions/tag-values/" tag)
+  (send-request (concatenate 'string "permissions/tag-values/" (url-format-tag tag))
                 :query-data `(("action" . ,(to-string action)))))
 
 
 (defun set-tag-value-permissions (tag action policy exceptions)
-  (send-request (concatenate 'string "permissions/tag-values/" tag)
+  (send-request (concatenate 'string "permissions/tag-values/" (url-format-tag tag))
                 :method :put
                 :query-data `(("action" . ,(to-string action)))
                 :body-data (make-permission-object policy exceptions)))
@@ -369,7 +411,7 @@ We inspect the return data and convert it to a lisp data structure if it is json
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defun create-tag (namespace tag description indexed)
   (send-request (concatenate 'string
-                             "tags/" namespace)
+                             "tags/" (url-format-tag namespace))
                 :method :post
                 :body-data (json:encode-json-alist-to-string
                             `(("name" . ,tag)
@@ -379,14 +421,14 @@ We inspect the return data and convert it to a lisp data structure if it is json
 
 (defun get-tag (namespace tag &key (return-description t))
   (send-request (concatenate 'string
-                             "tags/" namespace "/"
+                             "tags/" (url-format-tag namespace) "/"
                              tag)
                 :query-data `(("returnDescription" . ,(if return-description "True" "False")))))
 
 
 (defun change-tag (namespace tag description)
   (send-request (concatenate 'string
-                             "tags/" namespace "/"
+                             "tags/" (url-format-tag namespace) "/"
                              tag)
                 :method :put
                 :body-data `(("description" . ,description))))
@@ -394,6 +436,7 @@ We inspect the return data and convert it to a lisp data structure if it is json
 
 (defun delete-tag (namespace tag)
   (send-request (concatenate 'string
-                             "tags/" namespace "/"
+                             "tags/" (url-format-tag namespace) "/"
                              tag)
                 :method :delete))
+

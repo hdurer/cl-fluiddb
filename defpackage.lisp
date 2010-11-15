@@ -23,10 +23,17 @@
    #:get-user
    
    #:get-object
+   #:get-object-about
    #:query-objects
    #:create-object
    #:get-object-tag-value
+   #:get-object-about-tag-value
    #:set-object-tag-value
+   #:set-object-about-tag-value
+   #:object-tag-has-value-p
+   #:object-about-tag-has-value-p
+   #:delete-object-tag-value
+   #:delete-object-about-tag-value
 
    #:get-namespace
    #:create-namespace
