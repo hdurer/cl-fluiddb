@@ -24,7 +24,6 @@
    
    #:get-object
    #:get-object-about
-   #:query-objects
    #:create-object
    #:get-object-tag-value
    #:get-object-about-tag-value
@@ -34,6 +33,11 @@
    #:object-about-tag-has-value-p
    #:delete-object-tag-value
    #:delete-object-about-tag-value
+
+   #:query-objects
+   #:query-objects-tag-values
+   #:set-objects-tag-values
+   #:delete-objects-tag-values
 
    #:get-namespace
    #:create-namespace

@@ -191,6 +191,10 @@ We inspect the return data and convert it to a lisp data structure if it is json
 (defun to-boolean (value)
   (if value 'json::true 'json::false))
 
+(defstruct json-alist 
+  (values))
+(defmethod json:encode-json((obj json-alist) stream)
+  (json::encode-json-alist (json-alist-values obj) stream))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Helpful things for users of this library
@@ -225,6 +229,28 @@ We inspect the return data and convert it to a lisp data structure if it is json
 (defun query-objects (query)
   (send-request "objects"
                 :query-data `(("query" . ,query))))
+
+(defun query-objects-tag-values (query tags-list)
+  (send-request "values"
+                :query-data (cons (cons "query"  query)
+                                  (loop for tag in tags-list
+                                        collect (cons "tag" tag)))))
+
+(defun set-objects-tag-values (query tags-values-list)
+  (send-request "values"
+                :method :put
+                :query-data `(("query" . ,query))
+                :body-data (json:encode-json-alist-to-string
+                            (loop for (tag . value) in tags-values-list
+                                  collect (cons tag 
+                                                (make-json-alist :values `(("value" . ,value))))))))
+
+(defun delete-objects-tag-values (query tags-list)
+  (send-request "values"
+                :method :delete
+                :query-data (cons (cons "query"  query)
+                                  (loop for tag in tags-list
+                                        collect (cons "tag" tag)))))
 
 
 (defun create-object (&optional about)
