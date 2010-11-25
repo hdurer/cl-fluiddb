@@ -11,6 +11,9 @@
    #:*proxy-credentials*
    #:*user-agent*
    #:*call-timeout*
+
+   ;; helpers
+   #:url-format-namespace-or-tag
    
    ;; functions and macros
    #:with-credentials
