@@ -118,9 +118,15 @@ It may still throw errors on network problems, timeouts etc."
                          headers
                          url))))
       (if *call-timeout*
-          (bordeaux-threads:with-timeout (*call-timeout*)
-            (do-call))
-          (do-call)))))
+          (handler-case 
+           (bordeaux-threads:with-timeout (*call-timeout*)
+              (do-call))
+           (#+sbcl sb-ext:timeout #-sbcl bordeaux-threads:timeout (ex)
+                   ;; reset connection which is now in a weird state
+                   (setf *connection* nil)
+                   ;; re-raise the condition
+                   (error ex)))
+        (do-call)))))
 
 (defun send-request (path &key body-data query-data (accept "application/json") (method :get) (content-type "application/json"))
   "Send a request to FluidDB.
