@@ -193,9 +193,9 @@ Policy should be either open or closed."
 
 ;; the following is a bit of a hack as my copy of the json library
 ;; cannot encode a false value
-(defmethod json:encode-json((obj (eql 'json::true)) stream)
+(defmethod json:encode-json((obj (eql 'json::true)) &optional stream)
   (json::write-json-chars "true" stream))
-(defmethod json:encode-json((obj (eql 'json::false)) stream)
+(defmethod json:encode-json((obj (eql 'json::false)) &optional stream)
   (json::write-json-chars "false" stream))
 
 (defun to-boolean (value)
@@ -205,7 +205,7 @@ Policy should be either open or closed."
 ;; Helper struct to allow us to reliably encode alist as JSON objects
 (defstruct json-alist 
   (values))
-(defmethod json:encode-json((obj json-alist) stream)
+(defmethod json:encode-json((obj json-alist) &optional stream)
   (json::encode-json-alist (json-alist-values obj) stream))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -339,7 +339,7 @@ Returns nil or the mime type of the value."
 (defun set-object-tag-value (id tag content &optional content-type)
   "Set the specified tag value on the object with the given id.
 Content is either presumed to be pre-formatted (if content-type is given)
-or will be JSON encoded and passed a fluiddb primitive type."
+or will be JSON encoded and passed as a fluiddb primitive type."
   (send-request (concatenate 'string "objects/" id "/" (url-format-namespace-or-tag tag))
                 :method :put
                 :body-data (if content-type
